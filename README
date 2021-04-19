@@ -1,0 +1,61 @@
+Dumitrescu Andrei 323CC - TEMA 1
+
+Parsare tabela rutare:
+    - Citesc adresa cu adresa de pe fiecare linie si o salvez intr-un
+        array de structuri.
+    - Citesc dupa formatul %d.%d.%d.%d, iar o adresa ip sau mac este
+        prt1 * 2^24 + prt2 * 2^16 + prt3 * 2^8 + prt4.
+    - Apoi pasez acel raspuns (de tip INT) functie htonl pentru a fi de tip
+        network.
+
+Protocopul ARP:
+    - Daca primesc un pachet de tip ARP atunci verific daca este REQUEST
+        sau REPLY
+    - Daca este de tip REQUEST trimit inapoi adresa mac a routerului curent
+    - Daca este de tip REPLY, fac update la tabela arp si apoi verific in 
+        coada daca am pachete care trebuie trimise catre adresa primita
+        de pachet. Daca am, le transmit la catre macul primit ca
+        raspuns. Daca sunt pachete in coada care inca nu au gasit
+        destinatie, atunci le bag in alta coada, iar la final schimb cozile.
+    - La final trec la urmatorul pas (continue;).
+
+Forwarding:
+    - Verific daca checksum-ul este valid. Daca nu este arunc pachetul.
+    - Caut ruta buna pe care se transmite pachetul din tabela de rutare
+    - Daca gasesc un entry valid in tabela ARP (daca gasesc adresa mac
+        a destinatiei) atunci decrementez ttl, modific checksum-ul,
+        completez headerul ether cu informatiile necesare (adresa mac
+        a sursei, care este macul interfetei pe care se transmite,
+        adresa mac a destinatiei, obtinuta din ARP table si tipul
+        pachetului, ETHERTYPE_IP) si trimit pachetul.
+    - Daca nu gasesc un entry in tabela ARP, atunci creez un
+        pachet ARP catre o adresa de broadcast(255.255.255.255) pentru
+        a acoperi toate nodurile din retea. In acest pachet eu "intreb"
+        reteaua care este adresa mac al unui IP.
+        Pachetul este bagat in coada pentru  a fi redirectionat mai tarziu.
+
+Protocopul ICMP:
+    - Daca ttl-ul pachetului este <= 1, atunci trimit un pachet de eroare
+        ICMP de tipul TIME_EXCEEDED, deoarece pachetul respectiv nu a ajuns
+        in timp util la destinatie.
+        Pachetul este trimis sursei de unde a venit pachetul initial,
+        cu adresa mac a pachetului initial, pornind de la destinatia
+        pachetului initial si interfata acestuia.
+
+    - Daca nu se gaseste un entry in tabela de rutare, atunci creez
+        din nou un pachet de eroare ICMP la fel ca ca la ttl, cu 
+        aceleasi argumente , exceptand tipul, care este de tip
+        DEST_UNREACH
+
+    - Daca pachetul curent este de tip ICMP, iar tipul este ECHOREPLY, 
+        atunci arunc pachetul.
+        Daca este de tipul ECHO, trimit un pachet ICMP inapoi la sursa
+        de tipul ECHOREPLY cu id-ul si secventa din headerul curent.
+        Daca destinatia acestui pachet este de fapt routerul curent,
+        atunci arunc pachetul, deoarece nu mai are unde sa se duca.
+
+Am modificat queue.h pentru a avea o functie queue_front, care
+returneaza elementul din capatul cozii.
+
+Nu am facut bonusul si am folosit ip_checksum din schelet.
+Am folosit headerele de arp_entry si route_table_entry din laborator.

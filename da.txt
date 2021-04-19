@@ -1,0 +1,198 @@
+#include <queue.h>
+#include "skel.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+typedef struct rtable_entry {
+	uint32_t sursa;
+	uint32_t next_hop;
+	uint32_t masca;
+	int interfata;
+} rtable_entry;
+
+struct arp_table_entry {
+	__u32 ip;
+	uint8_t mac[6];
+};
+
+
+struct ether_header {
+  u_int8_t  ether_dhost[ETH_ALEN];
+  u_int8_t  ether_shost[ETH_ALEN];
+  u_int16_t ether_type;
+} _attribute_ ((_packed_));
+
+
+
+uint32_t auxx(char *sir) {
+	uint32_t suma = 0;
+	int count = 24;
+	char *token;
+	token = strtok(sir, ".");
+	while(token != NULL) {
+		suma += (1 << count) * atoi(token);
+		count -= 8;
+		token = strtok(NULL, ".");
+	}
+	return suma;
+}
+
+int main(int argc, char *argv[])
+{
+	packet m;
+	int rc;
+	init(argc - 2, argv + 2);
+
+	FILE *fp = fopen(argv[1], "r");
+	fseek(fp, 0, SEEK_SET);
+	int count = 0;
+	char ch;
+	while((ch = fgetc(fp)) != EOF) {
+		if( ch == '\n') {
+			count++;
+		}
+	}
+	fseek(fp, 0, SEEK_SET);
+	rtable_entry *rtablee = (rtable_entry *) malloc (count * sizeof(rtable_entry));
+	printf("%d\n", count);
+	for(int i = 0 ; i < count; i++) {
+		char str1[100], str2[100], str3[100];
+		int interface;
+		fscanf(fp, "%s %s %s %d", str1, str2, str3, &interface);
+		rtablee[i].sursa = auxx(str1);
+		rtablee[i].next_hop = auxx(str2);
+		rtablee[i].masca = auxx(str3);
+		rtablee[i].interfata = interface;
+	}
+	// for(int i = 0 ; i < count; i++) {
+	// 	printf("%u %u %u %d\n", rtablee[i].sursa, rtablee[i].next_hop, rtablee[i].masca, rtablee[i].interfata);
+	// }
+
+	fclose(fp);
+
+
+	// declari o coada.
+
+	struct queue *coada = queue_create();
+	while (1) {
+		rc = get_packet(&m);
+		DIE(rc < 0, "get_message");
+
+		// struct ether_header et;
+		// et.ether_type = ETH_P_ARP;
+		// struct arp_header *ceva;
+		// send_arp()
+		// get_interface_mac(m.interface, et.ether_shost); 
+
+
+		struct arp_header *ah = parse_arp(m.payload);
+		if(ah != NULL) {
+			if(ah->op == htons(ARPOP_REQUEST)) {
+				struct ether_header et;
+				et.ether_type = ETH_P_ARP;
+				get_interface_mac(m.interface, et.ether_shost);
+				memcpy(et.ether_dhost, ah->sha, sizeof(uint32_t));
+				send_arp(ah->spa, ah->tpa, &et, m.interface, ah->op);
+			}
+		}
+
+
+
+
+		/*
+			parse arp de m.payload intr-un arp header pointer
+			daca rezultatul nu e null
+	ARP			I daca header->op == htons(ARPOP_REQUEST)
+					construiesti ethernet header, type
+					shost este get interface mac m.interface
+					dhost este in header->sha
+					daddr este spa din header arp
+					saddr este dpa
+					apelezi send arp de (spa, tpa, ether header, m interface ARPOP)
+FWD	ARP			III daca e reply:
+					declar coad aux
+					arp tabel [ arp len]. ip = arp header -> spa
+					arp tabel [ arp len]. mac = arp header sha MEMCPY
+					arp len ++
+					cat timp nu e goala coada
+						packet *mesaj = deq coada queue_deque
+                        scoti ether header, ip header
+                        arp entry = get arp entry
+						rt entry = cautati in route table entry dupa ip header daddr func lab4
+						daca rezultat de get_arp_entry(rt entry->next_hop) nu e null;
+							EXACT ACELASI LUCRU CA LA XXXX
+						daca nu
+							adaugati mesaju in coada auxiliara
+					COADA DECLARATA INAINTE DE WHILE = COADA AUXILIARA
+			
+			II 
+FWD	ARP		struct iphdr *ip_hdr = (struct iphdr *)(m.payload + sizeof(struct ether_header));
+FWD	ARP		la fel iei si ether header si icmp header (tot ca in lab4)
+
+	ARP		!!!! cautati in route table entry dupa ip header daddr func lab4
+ICP	ARP		daca a intors null
+				trimiti icmp error host unreachable 
+				void send_icmp_error(uint32_t daddr, uint32_t saddr, uint8_t *sha, uint8_t *dha, u_int8_t type, u_int8_t code, int interface);
+						daddr e sursa(IP header)
+						saddr e destinatia(ip header)
+						sha e dhost din ether header
+						dha e shost
+						type ICMP_UNREACH
+						code e 0
+						interface e m.interface
+	ARP					continue
+
+ICP			daca ip hdr ttl <= 1
+				send icmp error
+				tot la fel ca inainte doar ca 
+				code ICMP_TIME_EXCEEDED
+				continue
+			
+ICP			daca (ip_checksum(ip header) != 0) {
+				continue;
+			}
+
+ICP	ARP		daca icmp header nu este null
+	ARP			daca tipul este	ICMP_ECHOREPLY
+	ARP				continue;
+				daca tipul e ICMP_ECHO
+					send_icmp(in skel)
+					void send_icmp(uint32_t daddr, uint32_t saddr, uint8_t *sha, uint8_t *dha, u_int8_t type, u_int8_t code, int interface, int id, int seq);
+					ca la send error dar cu  ccc.un.echo.id, ccc.un.echo.sequence
+					
+                    get interface ip (m.interface)
+					ip router = intet_atons, ntoa de rez de la get
+					daca este adresat routerului (ip router == daddr din ip header (CA INTURI))
+						continue;
+			
+	ARP		struct arp_entry *matching_arp = get_arp_entry(best_route->next_hop); => lab 4, si FUNCTIA SA O LUATI
+
+ARP   		daca nu este null:
+	XXXX		trebuie sa trimiteti packet-ul mai departe
+				scadeti ttl din ip hdr;
+				ip_hdr->check = 0;
+				ip_hdr->check = ip_checksum(ip_hdr, sizeof(struct iphdr));
+				memcpy(eth_hdr->ether_dhost, arp entry->mac, sizeof(arp entry->mac));
+				ether shost-> get interface mac pe rt entry interface
+                ether type = htons(ETHERTYPE_IP)
+				send_packet(rt entry -> interface, m)		
+			daca este null
+				salvezi O COPIE A LUI m intr-o coada -> faci un packet *copie = alocare
+				memcpy(copie, m, sizeof(packet))
+				formam request de arp (send_arp cu ARPOP_REQUEST)
+				construiesti ethernet header, type
+					shost este get interface mac de rt entry interface
+					dhost este BROADCAST = este un mac uint_8[6] in care uint_8[i] = 0xFF (255) vector cu for
+					daddr este este next hop din rt entry
+					saddr este get interface ip pe rt_entry interface
+					apelezi send arp cu type ARPOP_REQUEST
+		*/
+// 	struct icmphdr ccc;
+// 	struct iphdr ceva2;
+// send_icmp(22, 22, "uint8_t *sha", "uint8_t *dha", "u_int8_t type",22, 1,);
+	
+	
+
+	}
+}
